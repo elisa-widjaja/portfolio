@@ -708,12 +708,33 @@
   .lightbox img {
     display: block; max-width: 100%; max-height: calc(100dvh - 6rem); width: auto; height: auto;
     border-radius: 10px; background: #fff; box-shadow: 0 30px 80px -20px rgba(0,0,0,0.7);
-    cursor: zoom-out;
+    cursor: zoom-in;
   }
   .lightbox figcaption { color: #b7bac6; text-align: center; }
   .lightbox.tall figure { max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain; justify-content: flex-start; }
-  .lightbox.tall img { max-height: none; width: min(100%, 1100px); cursor: zoom-out; }
+  .lightbox.tall img { max-height: none; width: min(100%, 1100px); cursor: zoom-in; }
   .lightbox.tall figcaption { position: sticky; bottom: 0; padding: 0.6rem 1rem; border-radius: 100px; background: rgba(8,9,14,0.75); }
+  /* zoomed: image at full resolution, panned by scrolling or dragging; click again to fit */
+  .lightbox.zoomed figure {
+    display: block; max-width: 100vw; width: 100vw; max-height: 100dvh; height: 100dvh;
+    overflow: auto; overscroll-behavior: contain; padding: 0; scrollbar-width: thin;
+  }
+  .lightbox.zoomed img {
+    max-width: none; max-height: none; height: auto; border-radius: 0; box-shadow: none;
+    cursor: zoom-out; user-select: none; -webkit-user-drag: none;
+  }
+  .lightbox.zoomed.dragging img { cursor: grabbing; }
+  .lightbox.zoomed figcaption {
+    position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
+    padding: 0.6rem 1rem; border-radius: 100px; background: rgba(8,9,14,0.75); pointer-events: none;
+  }
+  .lightbox .lb-hint {
+    position: fixed; left: 50%; top: 1.2rem; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: #b7bac6; background: rgba(8,9,14,0.75); padding: 0.45rem 0.9rem; border-radius: 100px; pointer-events: none;
+    opacity: 0; transition: opacity 0.2s ease;
+  }
+  .lightbox[open]:not(.zoomed) .lb-hint { opacity: 1; }
   .lightbox .lb-close {
     position: fixed; top: 1rem; right: 1rem; width: 44px; height: 44px;
     display: grid; place-items: center; border-radius: 50%; cursor: pointer;
@@ -1138,6 +1159,7 @@
   <button class="lb-close" type="button" aria-label="Close">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
   </button>
+  <span class="lb-hint" aria-hidden="true">Select image to zoom</span>
   <figure><img alt=""><figcaption></figcaption></figure>
 </dialog>
 </div><!-- /.content -->
@@ -1222,11 +1244,49 @@
       cap.textContent = fc ? (fc.childNodes[0] && fc.childNodes[0].nodeType === 3 ? fc.childNodes[0].textContent : fc.textContent).trim() : "";
       box.showModal();
     });
-    // close on the button, on the image, or anywhere on the backdrop; Escape is built in
+    var fig = box.querySelector("figure");
+    var drag = null, moved = false;
+
+    function zoomIn(e) {
+      // zoom to the image's full resolution (at least 2x the fitted size), centred on the point clicked
+      var r = img.getBoundingClientRect();
+      var rx = e ? (e.clientX - r.left) / r.width : 0.5;
+      var ry = e ? (e.clientY - r.top) / r.height : 0.5;
+      var w = Math.max(img.naturalWidth, r.width * 2);
+      box.classList.add("zoomed");
+      img.style.width = w + "px";
+      var h = w * img.naturalHeight / img.naturalWidth;
+      fig.scrollLeft = Math.max(0, rx * w - fig.clientWidth / 2);
+      fig.scrollTop = Math.max(0, ry * h - fig.clientHeight / 2);
+    }
+    function zoomOut() {
+      box.classList.remove("zoomed");
+      img.style.width = "";
+      fig.scrollLeft = 0; fig.scrollTop = 0;
+    }
+
+    // close on the button or the backdrop; Escape is built in. Clicking the image zooms in and out.
     box.addEventListener("click", function (e) {
-      if (e.target === box || e.target === img || e.target.closest(".lb-close")) box.close();
+      if (e.target.closest(".lb-close") || e.target === box) { box.close(); return; }
+      if (e.target !== img || moved) return;
+      if (box.classList.contains("zoomed")) zoomOut(); else zoomIn(e);
     });
-    box.addEventListener("close", function () { img.removeAttribute("src"); box.classList.remove("tall"); });
+    // drag to pan while zoomed
+    img.addEventListener("pointerdown", function (e) {
+      if (!box.classList.contains("zoomed")) return;
+      drag = { x: e.clientX, y: e.clientY, sl: fig.scrollLeft, st: fig.scrollTop }; moved = false;
+      img.setPointerCapture(e.pointerId);
+    });
+    img.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 6) { moved = true; box.classList.add("dragging"); }
+      if (moved) { fig.scrollLeft = drag.sl - dx; fig.scrollTop = drag.st - dy; }
+    });
+    function endDrag() { drag = null; box.classList.remove("dragging"); setTimeout(function () { moved = false; }, 0); }
+    img.addEventListener("pointerup", endDrag);
+    img.addEventListener("pointercancel", endDrag);
+    box.addEventListener("close", function () { zoomOut(); img.removeAttribute("src"); box.classList.remove("tall"); });
   })();
 
   // scroll reveal
