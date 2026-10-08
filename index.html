@@ -1421,8 +1421,32 @@
         }
       }
     }
-    function route() { show(decodeURIComponent((location.hash || "").replace(/^#\/?/, ""))); }
-    window.addEventListener("hashchange", route);
+    // On the live site each case study has its own path (/recifriend-social),
+    // generated at deploy time by build-pages.py, so analytics can count it.
+    // Opened as a local file, the page falls back to hash routing (#recifriend-social).
+    var usePaths = location.protocol !== "file:";
+    function hashSlug() { return decodeURIComponent((location.hash || "").replace(/^#\/?/, "")); }
+    function pathSlug() { return decodeURIComponent(location.pathname.replace(/^\/|\/$/g, "")); }
+    function isProject(slug) { return !!(DATA[slug] && !DATA[slug].hidden); }
+    function urlFor(slug) { return isProject(slug) ? "/" + slug : "/" + (slug ? "#" + slug : ""); }
+    function route() {
+      if (!usePaths) return show(hashSlug());
+      var h = hashSlug();
+      if (isProject(h)) { history.replaceState(null, "", urlFor(h)); return show(h); }
+      var p = pathSlug();
+      show(isProject(p) ? p : h);
+    }
+    document.addEventListener("click", function (e) {
+      if (!usePaths || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var a = e.target.closest && e.target.closest("a[href^='#']");
+      if (!a || a.target) return;
+      e.preventDefault();
+      var slug = decodeURIComponent(a.getAttribute("href").replace(/^#\/?/, ""));
+      var url = urlFor(slug);
+      if (url !== location.pathname + location.hash) history.pushState(null, "", url);
+      route();
+    });
+    window.addEventListener(usePaths ? "popstate" : "hashchange", route);
     route();
   })();
 </script>
